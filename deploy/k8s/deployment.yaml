@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: master-backend
+  labels:
+    app: master-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: master-backend
+  template:
+    metadata:
+      labels:
+        app: master-backend
+    spec:
+      # Настройка imagePullSecrets для доступа к приватному Registry
+      # Убедитесь, что секрет с именем docker-registry-secret был создан в неймспейсе заранее
+      # Пример команды: kubectl create secret docker-registry docker-registry-secret --docker-server=... --docker-username=... --docker-password=...
+      imagePullSecrets:
+        - name: marketplace-regcred
+      containers:
+        - name: webapi
+          # Образ будет подставляться через GitLab CI
+          image: gitlab.infocraft.ru:5050/experiments/marketplace1:<VERSION>
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: master-backend-config
+            - secretRef:
+                name: master-backend-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          # Проверки работоспособности API
+          livenessProbe:
+            httpGet:
+              path: /swagger/index.html # Или другой health-check endpoint
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /swagger/index.html
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 15

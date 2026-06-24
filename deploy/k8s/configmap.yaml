@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: master-backend-config
+  labels:
+    app: master-backend
+data:
+  ASPNETCORE_ENVIRONMENT: "Development" # или Production
+  Minio__Endpoint: "s3.domohod.infocraft.ru"
+  Minio__WithSSL: "false"
+  Minio__ProxyAddress: "192.168.0.234"
+  Minio__ProxyPort: "9000"
+  Minio__AttachmentBucket__BucketName: "masterfiles"
+  Minio__AttachmentBucket__LinkExpirationInSeconds: "10000"
+  Jwt__Issuer: "MasterApp"
+  Jwt__Audience: "MasterAppMobile"

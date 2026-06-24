@@ -1,0 +1,64 @@
+stages:
+  - build-migrator
+  - deploy-migrator
+  - build
+  - deploy
+
+
+build-migrator:
+  stage: build-migrator
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  variables:
+    DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE/migrator:$CI_COMMIT_REF_SLUG
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --build-arg ProjectPath=/
+      --dockerfile "${CI_PROJECT_DIR}/Migrator/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}/migrator:${CI_COMMIT_SHA}"
+
+
+deploy-migrator:
+  stage: deploy-migrator
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: ['']
+  script:
+      - sed -i "s/<VERSION>/${CI_COMMIT_SHA}/g" deploy/migrator/migrator-job.yaml
+      - kubectl delete -f deploy/migrator/migrator-job.yaml --ignore-not-found=true --wait=true -n gitlab-managed-apps
+      - kubectl apply -f deploy/migrator/migrator-job.yaml -n gitlab-managed-apps
+      - kubectl wait --for=condition=complete job/master-backend-migrator-job --timeout=300s -n gitlab-managed-apps || (kubectl logs job/master-backend-migrator-job -n gitlab-managed-apps && exit 1)
+
+
+# Этап сборки: собираем образ и пушим его во встроенный GitLab Registry
+build:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  variables:
+    DOCKER_IMAGE_NAME: $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --build-arg ProjectPath=/
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHA}"
+
+  
+
+# Этап развертывания: автоматическое обновление в Kubernetes
+deploy-k8s:
+  stage: deploy
+  # Легковесный образ только с утилитой kubectl
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: ['']
+  script:
+      - sed -i "s/<VERSION>/${CI_COMMIT_SHA}/g" deploy/k8s/deployment.yaml
+      - kubectl delete -f deploy/k8s/deployment.yaml -n gitlab-managed-apps
+      - kubectl apply -f deploy/k8s/deployment.yaml -n gitlab-managed-apps
+      - kubectl apply -f deploy/k8s/service.yaml -n gitlab-managed-apps
+

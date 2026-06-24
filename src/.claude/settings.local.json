@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet ef *)",
+      "Bash(dotnet build *)",
+      "Read(//c/Users/phumala.IC/source/repos/marketplace-back-plus-app/**)",
+      "Bash(dotnet run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5278)",
+      "Bash(curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\\\n\" http://localhost:5278)",
+      "Bash(Select-String -Pattern \"error\")",
+      "Bash(Select-Object -First 20)",
+      "PowerShell(Stop-Process -Id 22056 -Force -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Name \"MasterApp.WebApi\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(Get-Process -Name \"dotnet\" -ErrorAction SilentlyContinue)"
+    ]
+  }
+}

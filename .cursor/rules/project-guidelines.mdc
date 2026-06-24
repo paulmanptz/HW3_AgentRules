@@ -1,0 +1,252 @@
+---
+description: Project guidance for future MasterApp development
+alwaysApply: true
+---
+
+# MasterApp Project Guidance
+
+Use `architecture.md` as the compact source of project context before making non-trivial changes. Treat the active codebase as `src/`: a .NET 9 modular monolith with `Auth`, `Master`, and `Files` bounded contexts, PostgreSQL via EF Core, MinIO for attachments, JWT/SSO auth, Docker/GitLab CI/Kubernetes deployment.
+
+## Architecture Boundaries
+
+- Keep changes inside the relevant module: `Auth`, `Master`, `Files`, `MasterApp.WebApi`, or `MasterApp.Migrator`.
+- Preserve dependency direction: WebApi composes modules; Application contains use cases/interfaces; Infrastructure owns EF/MinIO/external services; Domain stays persistence-agnostic.
+- In `Master` and `Auth`, follow the existing service-layer pattern. In `Files`, follow the existing MediatR/CQRS pattern unless intentionally refactoring the module.
+- Do not introduce cross-module direct infrastructure dependencies. Use contracts such as `IFileContract` when one bounded context needs another.
+- Avoid reviving deleted legacy `project/` or memory-bank content unless the user explicitly asks.
+
+## ASP.NET Web API Practices
+
+- Keep controllers thin: validate request shape, read claims, call application services/use cases, and map responses.
+- Prefer explicit DTOs/contracts over exposing EF entities or domain entities from API endpoints.
+- Use async EF/Core and I/O APIs; pass `CancellationToken` through new controller/service methods when practical.
+- Put business rules in Application/use-case services, not in controllers or EF configuration.
+- Register dependencies through module/extension methods where possible; avoid growing `Program.cs` with feature-specific wiring.
+- Use configuration binding/options for external settings; never hardcode secrets, URLs, or environment-specific values in code.
+- For new endpoints, define clear routes, status codes, authorization requirements, and error behavior. Do not add anonymous/debug endpoints without explicit user request.
+- Add EF migrations only when the model changes intentionally, and keep each migration scoped to one context.
+- Add or update tests for behavior changes when a suitable test project exists; if none exists, note the gap and keep changes small and verifiable.
+
+## Security And Operations
+
+- Do not add new secrets to git: connection strings, JWT keys, MinIO keys, SSO credentials, tokens, certificates, or real private infrastructure addresses.
+- Prefer production-safe defaults: no fallback signing keys, no permissive CORS for production, no Swagger-dependent health checks.
+- Consider auth/role checks part of the endpoint contract. Dispatcher and master flows must not accidentally share privileges.
+- For deployment changes, keep Docker/Kubernetes/CI behavior consistent with the existing migrator-before-app flow.
+
+## Git And Change Control
+
+- Never create commits, amend commits, push, force-push, reset, checkout, or revert changes unless the user explicitly requests it.
+- Before staging anything, inspect `git status --short`, unstaged diff, and staged diff. Do not rely on the initial chat snapshot.
+- Do not use broad `git add .` or `git add -A`. Stage only files directly related to the requested change.
+- Do not stage generated or local artifacts unless explicitly required: `bin/`, `obj/`, `.vs/`, `.lscache`, local settings, logs, temp files, secrets, or private config.
+- Do not revert or overwrite unrelated user changes. If a file has unrelated edits, preserve them and make the smallest compatible change.
+- If a requested commit would include secrets or unrelated deletions, stop and warn the user before staging.
+
+## Typical Task: Review Latest Commit
+
+When the user asks something like "Выполни ревью комита", "Сделай ревью последнего коммита", or "Review latest commit", review the latest commit in Master Backend using this prompt:
+
+Проведи code review последнего коммита в проекте Master Backend (ASP.NET Web API).
+
+Проанализируй изменения по следующим критериям:
+
+1. **Архитектура и структура:**
+   - Соблюдается ли принцип разделения ответственности (Controller -> Service -> Repository)?
+   - Нет ли бизнес-логики в контроллерах?
+   - Правильно ли используется Dependency Injection?
+
+2. **API дизайн (REST):**
+   - Соответствуют ли эндпоинты REST-принципам (правильные HTTP-методы, статус-коды)?
+   - Понятны ли названия маршрутов и параметров?
+   - Используется ли пагинация для списковых методов?
+
+3. **Безопасность:**
+   - Есть ли валидация входных данных (DataAnnotations, FluentValidation)?
+   - Защищены ли эндпоинты атрибутами авторизации (`[Authorize]`)?
+   - Нет ли SQL-инъекций или хардкода секретов?
+   - Хранение секретов:
+     - Нет ли в коде захардкоженных паролей, API ключей, токенов, connection strings?
+     - Проверь файлы конфигурации (`appsettings.json`, `appsettings.Development.json`) на наличие секретов.
+     - Убедись, что все секреты вынесены в переменные окружения или User Secrets.
+     - Проверь, что файлы с секретами (`.env`, `appsettings.*.json` с паролями) добавлены в `.gitignore`.
+     - Нет ли секретов в комментариях кода или логах?
+     - Используются ли менеджеры секретов (Azure Key Vault, AWS Secrets Manager) для production?
+
+4. **Работа с БД (PostgreSQL/EF Core):**
+   - Используются ли асинхронные методы (`ToListAsync`, `SaveChangesAsync`)?
+   - Нет ли N+1 проблем в запросах?
+   - Правильно ли настроены индексы в миграциях?
+   - Используется ли `AsNoTracking()` для read-only запросов?
+
+5. **Обработка ошибок:**
+   - Есть ли try-catch блоки для критичных операций?
+   - Используются ли стандартные exception filters или middleware?
+   - Возвращаются ли информативные сообщения об ошибках без утечки stack trace?
+
+6. **Производительность:**
+   - Нет ли блокирующих вызовов (`.Result`, `.Wait()`) в асинхронном коде?
+   - Оптимизированы ли запросы к БД (используются ли `Include`/`ThenInclude` с мерой)?
+   - Есть ли кеширование для часто запрашиваемых данных?
+
+7. **Качество кода:**
+   - Понятны ли названия переменных, методов, классов?
+   - Есть ли XML-комментарии для публичных API методов?
+   - Нет ли дублирования кода?
+   - Соблюдается ли C# coding conventions?
+
+8. **Тестируемость:**
+   - Можно ли легко покрыть новый код unit-тестами?
+   - Не создается ли жестких зависимостей от внешних сервисов?
+
+Формат ответа:
+
+1. **Краткое резюме** (2-3 предложения): общее впечатление о коммите, критичные проблемы.
+2. **Список замечаний** по приоритетам:
+   - 🔴 **Критично** (требует исправления до мержа)
+   - 🟡 **Важно** (рекомендуется исправить)
+   - 🟢 **Минорно** (предложения по улучшению)
+3. **Конкретные рекомендации** с примерами кода (как исправить).
+4. **Вопросы к автору** (если есть неясности в архитектуре или решениях).
+5. **Итоговая оценка**: Approve / Request Changes / Needs Discussion.
+
+Критерии готовности ревью:
+
+- Проверены все 8 категорий выше.
+- Для каждого замечания указан конкретный файл и строка.
+- Предложены конкретные способы исправления (с примерами кода).
+- Ревью написано конструктивным тоном, без токсичности.
+- В конце ответа добавлена проверочная фраза: "Ревью коммита Master Backend завершено с учетом контекста проекта."
+
+## Typical Task: Cover Latest Commit With Tests
+
+When the user asks something like "Покрой тестами все изменения коммита", "Напиши тесты для последнего коммита", or "Cover latest commit with tests", use this prompt:
+
+Напиши unit-тесты для всех изменений в последнем коммите проекта Master Backend (ASP.NET Web API).
+
+Анализ коммита:
+
+1. Определи все новые/измененные методы в Controllers, Services, Repositories.
+2. Для каждого метода создай соответствующие тесты.
+
+Требования к тестам:
+
+1. **Фреймворк и инструменты:**
+   - Используй xUnit как тестовый фреймворк.
+   - Используй Moq для мокинга зависимостей.
+   - Используй FluentAssertions для проверок.
+   - Используй AutoFixture для генерации тестовых данных (если применимо).
+
+2. **Структура тестов (AAA паттерн):**
+   - Arrange: подготовка данных, создание моков, настройка зависимостей.
+   - Act: вызов тестируемого метода.
+   - Assert: проверка результатов с использованием FluentAssertions.
+
+3. **Что тестировать для каждого метода:**
+   - Happy path: успешное выполнение с валидными данными.
+   - Граничные случаи: пустые коллекции, null значения, минимальные/максимальные значения.
+   - Валидация: некорректные входные данные, нарушение бизнес-правил.
+   - Обработка ошибок: исключения, которые может бросить метод.
+   - Взаимодействие с зависимостями: проверка, что нужные методы моков были вызваны (`Verify`).
+
+4. **Тесты для Controllers:**
+   - Тестируй только логику контроллера, мокируй сервисы.
+   - Проверяй возвращаемые `ActionResult` типы (`OkObjectResult`, `NotFoundResult`, `BadRequestResult`).
+   - Проверяй, что контроллер вызывает правильные методы сервисов с правильными параметрами.
+   - Не тестируй бизнес-логику в тестах контроллера.
+
+5. **Тесты для Services:**
+   - Мокируй репозитории и внешние зависимости.
+   - Тестируй бизнес-логику сервиса.
+   - Проверяй, что сервис правильно вызывает методы репозитория.
+   - Тестируй маппинг между entity и DTO.
+   - Проверяй обработку исключений и их проброс.
+
+6. **Тесты для Repositories:**
+   - Используй InMemory database provider для EF Core.
+   - Тестируй реальные запросы к БД, не мокируй `DbContext`.
+   - Проверяй, что данные правильно сохраняются и извлекаются.
+   - Тестируй фильтрацию, сортировку, пагинацию.
+
+7. **Именование тестов:**
+   - Формат: `MethodName_Scenario_ExpectedBehavior`.
+   - Пример: `GetUserById_UserExists_ReturnsUserDto`.
+   - Пример: `CreateUser_InvalidEmail_ThrowsValidationException`.
+
+8. **Организация тестов:**
+   - Создай отдельный тестовый класс для каждого тестируемого класса.
+   - Используй `[Fact]` для простых тестов.
+   - Используй `[Theory]` и `[InlineData]` для параметризованных тестов.
+   - Группируй связанные тесты с помощью region или вложенных классов.
+
+9. **Покрытие кода:**
+   - Цель: минимум 80% покрытия для нового кода.
+   - Покрой все ветки кода (`if/else`, `switch`, `try/catch`).
+   - Тестируй приватные методы через публичные методы, которые их вызывают.
+
+10. **Best practices:**
+    - Один тест = одна проверка.
+    - Тесты должны быть независимыми друг от друга.
+    - Избегай дублирования кода в тестах, используй helper methods или fixture.
+    - Тесты должны быть читаемыми и самодокументирующимися.
+    - Не тестируй фреймворк или библиотеки, только свой код.
+
+Формат ответа:
+
+1. **Анализ коммита:** список всех новых/измененных методов, которые нужно покрыть тестами.
+2. **План тестирования:** какие типы тестов будут написаны для каждого метода.
+3. **Код тестов:** полный код тестовых классов с импортами.
+4. **Инструкция по запуску:** команды для запуска тестов и генерации отчета о покрытии.
+5. **Оценка покрытия:** примерный процент покрытия нового кода.
+
+Критерии готовности:
+
+- Все новые/измененные методы покрыты тестами.
+- Тесты используют xUnit + Moq + FluentAssertions.
+- Каждый тест следует AAA паттерну.
+- Тесты изолированы и не зависят друг от друга.
+- Покрыты happy path, граничные случаи и обработка ошибок.
+- Именование тестов соответствует конвенции.
+- Тесты компилируются и проходят.
+- В конце ответа добавлена проверочная фраза: "Тесты для коммита Lineman написаны с учетом контекста проекта."
+
+## Typical Task: Generate Description For Commits
+
+When the user asks something like "Сгенери описание по следующим коммитам", "Сгенерируй описание по коммитам", or provides a list of commit hashes for a description, use this prompt:
+
+Сгенерируй описание изменений по указанному списку коммитов проекта Master Backend (ASP.NET Web API).
+
+Входные данные: список хэшей коммитов от пользователя.
+
+Порядок работы:
+
+1. Для каждого хэша получи метаданные коммита: hash, author, date, subject.
+2. Проанализируй diff каждого коммита и сгруппируй изменения по смысловым блокам, а не только по файлам.
+3. Учитывай контекст проекта из `architecture.md`: модульный монолит .NET 9 с модулями `Auth`, `Master`, `Files`, PostgreSQL/EF Core, MinIO, JWT/SSO, Docker/GitLab CI/Kubernetes.
+4. Отдельно выдели изменения в API, бизнес-логике, данных/миграциях, безопасности, конфигурации, тестах и деплое, если они есть.
+5. По возможности добавь Mermaid-диаграммы, если они помогают понять изменения: flowchart для зависимостей и модулей, sequence diagram для пользовательских/API сценариев, ER-style схему для изменений данных, deployment flow для CI/CD. Не добавляй диаграмму ради диаграммы.
+6. Не выдумывай поведение, которого нет в diff. Если назначение изменения неочевидно, явно отметь это как предположение или вопрос.
+7. Обрати внимание на breaking changes, риски миграций, изменения контрактов API, секреты в конфигурации и влияние на совместимость.
+
+Формат ответа:
+
+1. **Краткое резюме**: 2-4 предложения о сути набора коммитов.
+2. **Изменения по коммитам**: для каждого коммита коротко укажи hash, заголовок и 2-5 ключевых изменений.
+3. **Сводка по областям**: API, бизнес-логика, БД/миграции, конфигурация/деплой, тесты, безопасность; пропускай пустые разделы.
+4. **Диаграммы**: добавь 1-2 Mermaid-диаграммы только при наличии полезного сценария или структурного изменения; если диаграммы не нужны, кратко укажи, что изменения линейные и диаграмма не требуется.
+5. **Риски и замечания**: потенциальные регрессии, технический долг, вопросы к автору.
+6. **Итоговое описание для changelog/PR**: готовый компактный текст, который можно использовать в описании PR или релиза.
+
+Критерии готовности:
+
+- Все переданные хэши проверены.
+- Описание основано на реальном diff и не содержит неподтвержденных утверждений.
+- Изменения сгруппированы понятно для reviewer/product owner.
+- Диаграммы добавлены там, где они повышают понятность, и не перегружают ответ.
+- Указаны риски, если они обнаружены.
+- В конце ответа добавлена фраза: "Описание по указанным коммитам Master Backend сгенерировано с учетом контекста проекта."
+
+## Verification Markers
+
+- End every assistant response with: `O_T_U_S рулит O_T_U_S`
+- End every generated code comment or documentation comment with: `Special 4 O_T_U_S!!!`
